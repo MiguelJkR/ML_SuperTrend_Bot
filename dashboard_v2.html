@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML SuperTrend v51 — Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --text: #c9d1d9; --text2: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+  --border: #30363d;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+.header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 18px; color: var(--accent); }
+.header .status { display: flex; gap: 12px; align-items: center; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.green { background: var(--green); }
+.dot.red { background: var(--red); }
+.dot.yellow { background: var(--yellow); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; padding: 16px; }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.card h3 { font-size: 14px; color: var(--text2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.card .value { font-size: 28px; font-weight: 600; }
+.card .sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.kpi-row { display: flex; gap: 16px; padding: 0 16px; flex-wrap: wrap; }
+.kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; flex: 1; min-width: 140px; }
+.kpi .label { font-size: 11px; color: var(--text2); text-transform: uppercase; }
+.kpi .val { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.kpi .val.green { color: var(--green); }
+.kpi .val.red { color: var(--red); }
+.kpi .val.yellow { color: var(--yellow); }
+.kpi .val.purple { color: var(--purple); }
+.chart-container { position: relative; height: 280px; }
+.wide { grid-column: span 2; }
+.alerts-list { max-height: 300px; overflow-y: auto; }
+.alert-item { padding: 8px 10px; border-left: 3px solid; margin-bottom: 6px; font-size: 13px; background: var(--bg3); border-radius: 0 4px 4px 0; }
+.alert-item.CRITICAL { border-color: var(--red); }
+.alert-item.WARNING { border-color: var(--yellow); }
+.alert-item.INFO { border-color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--text2); border-bottom: 1px solid var(--border); padding: 6px 8px; font-weight: 500; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--bg3); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge.robust { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge.overfit { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge.acceptable { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.tab-bar { display: flex; gap: 4px; padding: 16px 16px 0; }
+.tab { padding: 8px 16px; background: var(--bg2); border: 1px solid var(--border); border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 13px; color: var(--text2); }
+.tab.active { background: var(--bg3); color: var(--accent); border-color: var(--accent); }
+.section { display: none; }
+.section.active { display: block; }
+@media (max-width: 768px) { .wide { grid-column: span 1; } .kpi-row { gap: 8px; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ML SuperTrend v51</h1>
+  <div class="status">
+    <span id="conn-status"><span class="dot yellow"></span> Connecting...</span>
+    <span id="last-update" style="color:var(--text2);font-size:12px;"></span>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <div class="tab active" onclick="showTab('overview')">Overview</div>
+  <div class="tab" onclick="showTab('performance')">Performance</div>
+  <div class="tab" onclick="showTab('ml')">ML & Strategies</div>
+  <div class="tab" onclick="showTab('risk')">Risk & Portfolio</div>
+  <div class="tab" onclick="showTab('experiments')">Experiments</div>
+  <div class="tab" onclick="showTab('alerts')">Alerts</div>
+</div>
+
+<!-- ===== OVERVIEW TAB ===== -->
+<div id="tab-overview" class="section active">
+  <div class="kpi-row" style="margin-top:16px;">
+    <div class="kpi"><div class="label">Balance</div><div class="val green" id="kpi-balance">—</div></div>
+    <div class="kpi"><div class="label">P&L Today</div><div class="val" id="kpi-pnl">—</div></div>
+    <div class="kpi"><div class="label">Win Rate</div><div class="val" id="kpi-winrate">—</div></div>
+    <div class="kpi"><div class="label">Sharpe Ratio</div><div class="val purple" id="kpi-sharpe">—</div></div>
+    <div class="kpi"><div class="label">Total Trades</div><div class="val" id="kpi-trades">—</div></div>
+    <div class="kpi"><div class="label">Regime</div><div class="val" id="kpi-regime">—</div></div>
+  </div>
+  <div class="grid">
+    <div class="card wide"><h3>Equity Curve</h3><div class="chart-container"><canvas id="equityChart"></canvas></div></div>
+    <div class="card"><h3>Module Status</h3><div id="module-status"></div></div>
+    <div class="card"><h3>Recent Signals</h3><div id="recent-signals"></div></div>
+  </div>
+</div>
+
+<!-- ===== PERFORMANCE TAB ===== -->
+<div id="tab-performance" class="section">
+  <div class="grid">
+    <div class="card wide"><h3>Returns Distribution (Monte Carlo)</h3><div class="chart-container"><canvas id="monteCarloChart"></canvas></div></div>
+    <div class="card"><h3>Drawdown</h3><div class="chart-container"><canvas id="drawdownChart"></canvas></div></div>
+    <div class="card"><h3>Win/Loss Distribution</h3><div class="chart-container"><canvas id="winLossChart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ===== ML TAB ===== -->
+<div id="tab-ml" class="section">
+  <div class="grid">
+    <div class="card"><h3>Timeframe Importance (MTF-LSTM)</h3><div class="chart-container"><canvas id="tfRadarChart"></canvas></div></div>
+    <div class="card"><h3>Wavelet Energy Decomposition</h3><div class="chart-container"><canvas id="waveletChart"></canvas></div></div>
+    <div class="card"><h3>Ensemble Weights</h3><div class="chart-container"><canvas id="ensembleChart"></canvas></div></div>
+    <div class="card"><h3>Granger Causality Matrix</h3><div class="chart-container"><canvas id="grangerChart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ===== RISK & PORTFOLIO TAB ===== -->
+<div id="tab-risk" class="section">
+  <div class="kpi-row" style="margin-top:16px;">
+    <div class="kpi"><div class="label">Kelly Size %</div><div class="val purple" id="kpi-kelly">—</div></div>
+    <div class="kpi"><div class="label">Kelly Raw f*</div><div class="val" id="kpi-kelly-raw">—</div></div>
+    <div class="kpi"><div class="label">Drawdown Mult</div><div class="val" id="kpi-dd-mult">—</div></div>
+    <div class="kpi"><div class="label">Drift Mult</div><div class="val" id="kpi-drift-mult">—</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Portfolio Weights</h3><div class="chart-container"><canvas id="portfolioChart"></canvas></div></div>
+    <div class="card"><h3>Kelly Adjustments</h3><div class="chart-container"><canvas id="kellyAdjChart"></canvas></div></div>
+    <div class="card wide"><h3>Efficient Frontier</h3><div class="chart-container"><canvas id="frontierChart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ===== EXPERIMENTS TAB ===== -->
+<div id="tab-experiments" class="section">
+  <div class="grid">
+    <div class="card wide"><h3>Experiment Leaderboard</h3><div id="exp-leaderboard"></div></div>
+    <div class="card"><h3>Walk-Forward Validation</h3><div id="wf-status"></div></div>
+    <div class="card"><h3>HyperOpt Progress</h3><div id="hyperopt-status"></div></div>
+  </div>
+</div>
+
+<!-- ===== ALERTS TAB ===== -->
+<div id="tab-alerts" class="section">
+  <div class="grid">
+    <div class="card wide"><h3>Recent Alerts</h3><div class="alerts-list" id="alerts-list"></div></div>
+    <div class="card"><h3>Alert Summary</h3><div id="alert-summary"></div></div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let charts = {};
+
+function showTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function createChart(id, config) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return null;
+  charts[id] = new Chart(ctx, config);
+  return charts[id];
+}
+
+const colors = { bg: '#0d1117', green: '#3fb950', red: '#f85149', blue: '#58a6ff', purple: '#bc8cff', yellow: '#d29922', text2: '#8b949e' };
+
+// ===== INIT CHARTS =====
+function initCharts() {
+  // Equity Curve
+  createChart('equityChart', {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Equity', data: [], borderColor: colors.blue, backgroundColor: 'rgba(88,166,255,0.1)', fill: true, tension: 0.3, pointRadius: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { color: '#21262d' }, ticks: { color: colors.text2 } } } }
+  });
+
+  // Monte Carlo
+  createChart('monteCarloChart', {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { color: '#21262d' }, ticks: { color: colors.text2 } } } }
+  });
+
+  // Drawdown
+  createChart('drawdownChart', {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Drawdown %', data: [], borderColor: colors.red, backgroundColor: 'rgba(248,81,73,0.15)', fill: true, tension: 0.3, pointRadius: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { color: '#21262d' }, ticks: { color: colors.text2 }, reverse: true } } }
+  });
+
+  // Win/Loss
+  createChart('winLossChart', {
+    type: 'bar',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: colors.text2 } }, y: { grid: { color: '#21262d' }, ticks: { color: colors.text2 } } } }
+  });
+
+  // TF Radar
+  createChart('tfRadarChart', {
+    type: 'radar',
+    data: { labels: ['M5', 'M15', 'H1', 'H4'], datasets: [{ label: 'Importance', data: [0.25, 0.25, 0.25, 0.25], backgroundColor: 'rgba(188,140,255,0.2)', borderColor: colors.purple, pointBackgroundColor: colors.purple }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { r: { grid: { color: '#21262d' }, angleLines: { color: '#21262d' }, pointLabels: { color: colors.text2 }, ticks: { display: false }, min: 0, max: 1 } } }
+  });
+
+  // Wavelet Energy
+  createChart('waveletChart', {
+    type: 'bar',
+    data: { labels: ['Level 1\n(Noise)', 'Level 2', 'Level 3', 'Level 4\n(Trend)'], datasets: [{ label: 'Energy %', data: [25, 25, 25, 25], backgroundColor: [colors.red, colors.yellow, colors.blue, colors.green] }] },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#21262d' }, ticks: { color: colors.text2 } }, y: { ticks: { color: colors.text2 } } } }
+  });
+
+  // Ensemble Weights
+  createChart('ensembleChart', {
+    type: 'doughnut',
+    data: { labels: ['LR', 'XGBoost', 'DQN-RL'], datasets: [{ data: [30, 40, 30], backgroundColor: [colors.blue, colors.green, colors.purple] }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: colors.text2, padding: 12 } } } }
+  });
+
+  // Portfolio Weights
+  createChart('portfolioChart', {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [colors.blue, colors.green, colors.purple, colors.yellow, colors.red, '#f778ba', '#79c0ff', '#56d4dd'] }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: colors.text2 } } } }
+  });
+
+  // Kelly Adjustments
+  createChart('kellyAdjChart', {
+    type: 'bar',
+    data: { labels: ['Regime', 'Uncertainty', 'Drift', 'Wavelet', 'Confidence', 'Drawdown'], datasets: [{ label: 'Multiplier', data: [1, 1, 1, 1, 1, 1], backgroundColor: colors.purple }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: colors.text2, font: { size: 10 } } }, y: { grid: { color: '#21262d' }, ticks: { color: colors.text2 }, min: 0, max: 1.2 } } }
+  });
+
+  // Efficient Frontier
+  createChart('frontierChart', {
+    type: 'scatter',
+    data: { datasets: [{ label: 'Frontier', data: [], backgroundColor: colors.blue, borderColor: colors.blue, pointRadius: 5 }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'Volatility', color: colors.text2 }, grid: { color: '#21262d' }, ticks: { color: colors.text2 } }, y: { title: { display: true, text: 'Return', color: colors.text2 }, grid: { color: '#21262d' }, ticks: { color: colors.text2 } } } }
+  });
+}
+
+// ===== DATA FETCHING =====
+async function fetchJSON(url) {
+  try {
+    const r = await fetch(API + url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function updateAll() {
+  const [status, alerts, v9, v10, kelly, wf, exps, portfolio] = await Promise.all([
+    fetchJSON('/api/status'),
+    fetchJSON('/api/smart_alerts'),
+    fetchJSON('/api/v9_overview'),
+    fetchJSON('/api/v10_overview'),
+    fetchJSON('/api/kelly_status'),
+    fetchJSON('/api/walk_forward_status'),
+    fetchJSON('/api/experiments'),
+    fetchJSON('/api/portfolio_status'),
+  ]);
+
+  const now = new Date().toLocaleTimeString();
+  document.getElementById('last-update').textContent = 'Updated: ' + now;
+
+  if (status) {
+    document.getElementById('conn-status').innerHTML = '<span class="dot green"></span> Connected';
+    updateOverview(status);
+  } else {
+    document.getElementById('conn-status').innerHTML = '<span class="dot red"></span> Disconnected';
+  }
+
+  if (alerts) updateAlerts(alerts);
+  if (v9) updateV9(v9);
+  if (v10) updateV10(v10);
+  if (kelly) updateKelly(kelly);
+  if (wf) updateWalkForward(wf);
+  if (exps) updateExperiments(exps);
+  if (portfolio) updatePortfolio(portfolio);
+}
+
+function updateOverview(d) {
+  const s = d.stats || {};
+  document.getElementById('kpi-trades').textContent = s.total_trades || 0;
+  const wr = s.wins && s.total_trades ? ((s.wins / Math.max(s.total_trades, 1)) * 100).toFixed(1) + '%' : '—';
+  document.getElementById('kpi-winrate').textContent = wr;
+
+  // Equity curve from equity_history
+  const eq = d.equity_history || [];
+  if (eq.length > 0 && charts.equityChart) {
+    charts.equityChart.data.labels = eq.map((_, i) => i);
+    charts.equityChart.data.datasets[0].data = eq.map(e => e.balance || e);
+    charts.equityChart.update('none');
+    const last = eq[eq.length - 1];
+    document.getElementById('kpi-balance').textContent = '$' + (last.balance || last).toLocaleString();
+  }
+
+  // Module status
+  const mods = [];
+  const modPairs = [
+    ['LSTM', d.lstm_available], ['HMM', d.hmm_available], ['Ensemble', d.ensemble_available],
+    ['Wavelet', d.wavelet_available], ['Backtester', d.backtester_available],
+  ];
+  // from v9/v10 overview we get more
+  let html = '<table><tr><th>Module</th><th>Status</th></tr>';
+  const allMods = { 'LSTM': true, 'HMM Regime': true, 'Ensemble': true, 'Wavelet': true, 'Backtester': true, 'Kelly Sizing': true, 'Walk-Forward': true, 'Experiments': true, 'Portfolio Opt.': true };
+  for (const [name, _] of Object.entries(allMods)) {
+    html += `<tr><td>${name}</td><td><span class="dot green"></span></td></tr>`;
+  }
+  html += '</table>';
+  document.getElementById('module-status').innerHTML = html;
+
+  // Recent signals
+  const sigs = d.recent_signals || [];
+  let sigHtml = '<table><tr><th>Time</th><th>Pair</th><th>Dir</th><th>Score</th></tr>';
+  sigs.slice(-8).reverse().forEach(s => {
+    const dir = s.direction || '—';
+    const cls = dir === 'LONG' ? 'green' : dir === 'SHORT' ? 'red' : '';
+    sigHtml += `<tr><td style="font-size:11px">${(s.time || '').slice(11, 19)}</td><td>${s.instrument || ''}</td><td style="color:var(--${cls})">${dir}</td><td>${(s.score || 0).toFixed(2)}</td></tr>`;
+  });
+  sigHtml += '</table>';
+  document.getElementById('recent-signals').innerHTML = sigHtml;
+}
+
+function updateAlerts(d) {
+  const list = d.recent_alerts || d.alerts || [];
+  let html = '';
+  if (list.length === 0) {
+    html = '<div style="color:var(--text2);padding:20px;text-align:center;">No alerts yet</div>';
+  }
+  list.forEach(a => {
+    const level = a.level || 'INFO';
+    html += `<div class="alert-item ${level}"><strong>[${level}]</strong> ${a.type || ''}: ${a.message || a.msg || ''}<br><span style="font-size:11px;color:var(--text2)">${a.timestamp || ''}</span></div>`;
+  });
+  document.getElementById('alerts-list').innerHTML = html;
+
+  const summary = `<div style="padding:8px"><p>Alerts today: <strong>${d.alerts_today || d._alerts_today || 0}</strong></p><p>Total tracked: <strong>${list.length}</strong></p></div>`;
+  document.getElementById('alert-summary').innerHTML = summary;
+}
+
+function updateV9(d) {
+  // TF importance radar
+  const tfi = d.tf_importance || {};
+  if (Object.keys(tfi).length > 0 && charts.tfRadarChart) {
+    charts.tfRadarChart.data.labels = Object.keys(tfi);
+    charts.tfRadarChart.data.datasets[0].data = Object.values(tfi);
+    charts.tfRadarChart.update('none');
+  }
+}
+
+function updateV10(d) {
+  if (d.kelly_size_pct !== undefined) {
+    document.getElementById('kpi-kelly').textContent = d.kelly_size_pct.toFixed(2) + '%';
+  }
+  if (d.kelly_raw !== undefined) {
+    document.getElementById('kpi-kelly-raw').textContent = d.kelly_raw.toFixed(4);
+  }
+  if (d.portfolio_weights && Object.keys(d.portfolio_weights).length > 0 && charts.portfolioChart) {
+    charts.portfolioChart.data.labels = Object.keys(d.portfolio_weights);
+    charts.portfolioChart.data.datasets[0].data = Object.values(d.portfolio_weights);
+    charts.portfolioChart.update('none');
+  }
+}
+
+function updateKelly(d) {
+  if (!d.available) return;
+  const adj = d.last_adjustments || {};
+  if (charts.kellyAdjChart && Object.keys(adj).length > 0) {
+    charts.kellyAdjChart.data.labels = Object.keys(adj);
+    charts.kellyAdjChart.data.datasets[0].data = Object.values(adj);
+    charts.kellyAdjChart.data.datasets[0].backgroundColor = Object.values(adj).map(v =>
+      v >= 0.9 ? colors.green : v >= 0.6 ? colors.yellow : colors.red
+    );
+    charts.kellyAdjChart.update('none');
+  }
+  if (adj.drawdown !== undefined) document.getElementById('kpi-dd-mult').textContent = adj.drawdown.toFixed(2);
+  if (adj.drift !== undefined) document.getElementById('kpi-drift-mult').textContent = adj.drift.toFixed(2);
+}
+
+function updateWalkForward(d) {
+  if (!d.available) {
+    document.getElementById('wf-status').innerHTML = '<div style="color:var(--text2);padding:16px;">Not yet run</div>';
+    return;
+  }
+  const s = d.summary || d;
+  const verdict = s.verdict || '—';
+  const badgeClass = verdict === 'ROBUST' ? 'robust' : verdict === 'OVERFITTING' ? 'overfit' : 'acceptable';
+  let html = `<div style="padding:8px">
+    <p>Verdict: <span class="badge ${badgeClass}">${verdict}</span></p>
+    <p style="margin-top:8px">Folds: ${s.n_completed_folds || s.n_folds || 0}</p>
+    <p>OOS Efficiency: <strong>${(s.oos_efficiency || 0).toFixed(3)}</strong></p>
+    <p>Overfit Prob: <strong>${(s.overfit_probability_pct || 0).toFixed(1)}%</strong></p>
+    <p>Train Sharpe: ${(s.train_sharpe_avg || 0).toFixed(3)}</p>
+    <p>Test Sharpe: ${(s.test_sharpe_avg || 0).toFixed(3)}</p>
+  </div>`;
+  document.getElementById('wf-status').innerHTML = html;
+}
+
+function updateExperiments(d) {
+  if (!d.available) {
+    document.getElementById('exp-leaderboard').innerHTML = '<div style="color:var(--text2);padding:16px;">No experiments yet</div>';
+    return;
+  }
+  const lb = d.leaderboard_sharpe || [];
+  let html = `<p style="margin-bottom:8px;color:var(--text2)">Total: ${d.total || 0} experiments</p>`;
+  html += '<table><tr><th>#</th><th>ID</th><th>Sharpe</th><th>PF</th><th>Win Rate</th><th>Date</th></tr>';
+  lb.forEach((e, i) => {
+    html += `<tr><td>${i + 1}</td><td>${e.id}</td><td style="color:var(--green)">${(e.sharpe || 0).toFixed(3)}</td><td>${(e.pf || 0).toFixed(2)}</td><td>${((e.win_rate || 0) * 100).toFixed(1)}%</td><td style="font-size:11px">${(e.timestamp || '').slice(0, 10)}</td></tr>`;
+  });
+  html += '</table>';
+  document.getElementById('exp-leaderboard').innerHTML = html;
+}
+
+function updatePortfolio(d) {
+  if (!d.available) return;
+  const w = d.last_weights || {};
+  if (Object.keys(w).length > 0 && charts.portfolioChart) {
+    charts.portfolioChart.data.labels = Object.keys(w);
+    charts.portfolioChart.data.datasets[0].data = Object.values(w);
+    charts.portfolioChart.update('none');
+  }
+}
+
+// ===== BOOT =====
+initCharts();
+updateAll();
+setInterval(updateAll, 10000); // Refresh every 10s
+</script>
+</body>
+</html>
