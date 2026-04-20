@@ -1,0 +1,69 @@
+# ML SuperTrend v51 — Docker Compose (GPU)
+# Usage:
+#   docker compose up -d          # Start bot + dashboard
+#   docker compose logs -f bot    # Follow bot logs
+#   docker compose down           # Stop all
+
+version: "3.9"
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml_supertrend_bot
+    restart: unless-stopped
+    command: ["python", "main.py", "--demo"]
+
+    # GPU passthrough (NVIDIA Container Toolkit required)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    volumes:
+      # Persist data, models, experiments, and logs
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./experiments:/app/experiments
+      - ./logs:/app/logs
+      # Mount .env for API keys (OANDA, Telegram, FRED)
+      - ./.env:/app/.env:ro
+
+    ports:
+      - "5000:5000"   # Dashboard
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - TZ=America/New_York
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Optional: Watchtower for auto-updates
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=86400  # Check every 24h
+    profiles:
+      - auto-update
