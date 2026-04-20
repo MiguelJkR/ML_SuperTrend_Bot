@@ -1,0 +1,9 @@
+requests>=2.28.0
+numpy>=1.23.0
+pandas>=1.5.0
+flask>=2.2.0
+scikit-learn>=1.1.0
+
+# Crypto brokers (install when needed)
+# python-binance>=1.0.19   # Binance Futures
+# pybit>=5.6.0              # Bybit V5 API
